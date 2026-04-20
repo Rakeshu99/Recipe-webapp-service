@@ -97,3 +97,25 @@ jobs:
       - name: Push Docker image
         run: |
           docker push ghcr.io/${{ github.repository_owner }}/recipe-backend:latest
+
+
+
+      # Cloud deployment: TO-DO
+      # 5️⃣ Push Docker image to Azure container registry
+      # - name: Login to Azure
+      #   uses: azure/docker-login@v2
+      #   with:
+      #     login-server: myacrname.azurecr.io
+      #     username: ${{ secrets.ACR_USERNAME }}
+      #     password: ${{ secrets.ACR_PASSWORD }}
+
+      # - name: Tag image
+      #   run: |
+      #     docker tag recipe-backend:latest myacrname.azurecr.io/recipe-backend:latest
+
+      # - name: Push image
+      #   run: |
+      #     docker push myacrname.azurecr.io/recipe-backend:latest
+
+      # 6 Login to Azure and run terraform file: main.tf, acr.tf, aks.tf
+      # 7 Login to AKS cluster and run deployment.yaml files, service.yaml
