@@ -1,0 +1,99 @@
+# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+# More GitHub Actions for Azure: https://github.com/Azure/actions
+
+name: Scan, Run Unit and BDD Test and Build App
+
+on:
+  push:
+    branches: [ development ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+
+  run-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Maven
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2
+
+      - name: Run test
+        run: mvn clean test
+
+      - name: Run verify
+        run: mvn verify -DskipTests
+
+      - name: Upload JUnit Test Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-reports
+          path: |
+            target/surefire-reports/*.xml
+
+  build:
+    needs: run-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read #This is required for actions/checkout
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java version
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'microsoft'
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests=true
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: recipe-webapp-service
+          path: '${{ github.workspace }}/target/*.jar'
+
+  
+  docker-build-push:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # IMPORTANT for GHCR
+
+    steps:
+      # 1️⃣ Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ Log in to GitHub Container Registry
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3️⃣ Set up Docker build
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 4️⃣ Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build -t ghcr.io/${{ github.repository_owner }}/recipe-backend:latest .
+
+      # 5️⃣ Push Docker image
+      - name: Push Docker image
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/recipe-backend:latest
