@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: ghcr.io/YOUR_USERNAME/recipe-backend:latest #TO-DO: replace with ACR
+          image: ghcr.io/YOUR_USERNAME/recipe-backend:${VERSION} #TO-DO: replace with ACR
           ports:
             - containerPort: 8080
 

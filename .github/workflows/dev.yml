@@ -91,12 +91,12 @@ jobs:
       # 4️⃣ Build Docker image
       - name: Build Docker image
         run: |
-          docker build -t ghcr.io/${{ github.repository_owner }}/recipe-backend:latest .
+          docker build -t ghcr.io/${{ github.repository_owner }}/recipe-backend:${{ github.run_number }} .
 
       # 5️⃣ Push Docker image
       - name: Push Docker image
         run: |
-          docker push ghcr.io/${{ github.repository_owner }}/recipe-backend:latest
+          docker push ghcr.io/${{ github.repository_owner }}/recipe-backend:${{ github.run_number }}
 
 
 
@@ -118,4 +118,5 @@ jobs:
       #     docker push myacrname.azurecr.io/recipe-backend:latest
 
       # 6 Login to Azure and run terraform file: main.tf, acr.tf, aks.tf
+      # kubectl set image deployment/backend backend=ghcr.io/${{ github.repository_owner }}/recipe-backend:${{ github.run_number }}
       # 7 Login to AKS cluster and run deployment.yaml files, service.yaml
