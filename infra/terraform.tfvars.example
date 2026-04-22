@@ -1,0 +1,22 @@
+# ─────────────────────────────────────────────────────
+# terraform.tfvars — fill in your actual values
+# DO NOT commit this file with real secrets to git.
+# Add terraform.tfvars to .gitignore.
+# ─────────────────────────────────────────────────────
+
+resource_group_name = "rg-recipe-webapp-prod"
+location            = "westeurope"
+environment         = "prod"
+app_name            = "recipe"
+
+# Must be globally unique across all Azure customers
+webapp_name = "recipe-backend-prod-<uniquesuffix>"
+
+# Must be globally unique, 5-50 alphanumeric chars only
+acr_name = "recipeacrprod<uniquesuffix>"
+
+acr_sku         = "Basic"      # Upgrade to Standard/Premium for geo-replication
+app_service_sku = "P1v3"       # P1v3 minimum recommended for production + slots
+
+image_name     = "recipe-backend"
+spring_profile = "prod"

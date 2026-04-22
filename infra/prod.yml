@@ -1,0 +1,177 @@
+# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+# More GitHub Actions for Azure: https://github.com/Azure/actions
+
+name: Scan, Run Unit and BDD Test and Build App
+
+on:
+  push:
+    branches: [ release ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Maven
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2
+
+      - name: Set up Java version
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'microsoft'
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests=true
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: recipe-webapp-service
+          path: '${{ github.workspace }}/target/*.jar'
+
+
+  docker-build-push:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Log in to Azure Container Registry ──────────────────────
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.AZURE_ACR_SERVER }}
+          username: ${{ secrets.AZURE_ACR_USERNAME }}
+          password: ${{ secrets.AZURE_ACR_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── Derive the fully-qualified image tag ─────────────────────
+      - name: Set image output
+        id: meta
+        run: |
+          echo "image=${{ secrets.AZURE_ACR_SERVER }}/recipe-backend:${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image to ACR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}
+            ${{ secrets.AZURE_ACR_SERVER }}/recipe-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+
+  deploy-staging:
+    needs: docker-build-push
+    runs-on: ubuntu-latest
+
+    environment:
+      name: staging
+      url: https://${{ secrets.AZURE_WEBAPP_NAME }}-staging.azurewebsites.net
+
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy container image to staging slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          slot-name: staging
+          images: ${{ needs.docker-build-push.outputs.image }}
+
+      - name: Restart staging slot
+        run: |
+          az webapp restart \
+            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --slot staging
+
+      - name: Smoke test staging
+        # Retry up to 5 times — container cold-start can take ~30 s
+        run: |
+          for i in {1..5}; do
+            curl -sf https://${{ secrets.AZURE_WEBAPP_NAME }}-staging.azurewebsites.net/actuator/health \
+              && echo "Health check passed" && exit 0 \
+              || echo "Attempt $i failed, retrying in 15s..."
+            sleep 15
+          done
+          echo "Smoke test failed after 5 attempts" && exit 1
+
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+      url: https://${{ secrets.AZURE_WEBAPP_NAME }}.azurewebsites.net
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Blue/green swap — staging becomes production with zero downtime
+      - name: Swap staging → production
+        run: |
+          az webapp deployment slot swap \
+            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --slot staging \
+            --target-slot production
+
+      - name: Verify production health
+        run: |
+          for i in {1..5}; do
+            curl -sf https://${{ secrets.AZURE_WEBAPP_NAME }}.azurewebsites.net/actuator/health \
+              && echo "Production health check passed" && exit 0 \
+              || echo "Attempt $i failed, retrying in 15s..."
+            sleep 15
+          done
+          echo "Production health check failed — consider rollback" && exit 1
+
+      # ── Optional: roll back if post-swap health fails ─────────────
+      # - name: Rollback on failure
+      #   if: failure()
+      #   run: |
+      #     az webapp deployment slot swap \
+      #       --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+      #       --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+      #       --slot staging \
+      #       --target-slot production
