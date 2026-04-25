@@ -51,7 +51,7 @@ jobs:
           docker push recipewebappacrdev.azurecr.io/recipe-backend:latest
 
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: recipewebappacrdev.azurecr.io/recipe-backend:latest
           format: table
